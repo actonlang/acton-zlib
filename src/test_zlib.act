@@ -1,0 +1,21 @@
+import testing
+import zlib
+
+def _test_roundtrip():
+    for x in range(100):
+        i = "hello".encode()
+        c = zlib.compress(i)
+        d = zlib.decompress(c)
+        testing.assertEqual(i, d)
+
+def _test_compress():
+    for x in range(100):
+        i = "hello".encode()
+        c = zlib.compress(i)
+        testing.assertEqual(c, b'x\x9c\xcbH\xcd\xc9\xc9\x07')
+
+def _test_decompress():
+    for x in range(1000):
+        c = b'x\x9c\xcbH\xcd\xc9\xc9\x07'
+        d = zlib.decompress(c)
+        testing.assertEqual(d, b'hello')

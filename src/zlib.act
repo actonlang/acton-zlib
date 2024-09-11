@@ -1,0 +1,5 @@
+pure def compress(data: bytes) -> bytes:
+    NotImplemented
+
+pure def decompress(data: bytes) -> bytes:
+    NotImplemented
