@@ -1,7 +1,11 @@
 .build
 build.zig*
+!deps/zlib/build.zig
+!deps/zlib/build.zig.zon
 .acton.lock
 .actonc.lock
 out
 zig-cache
+.zig-cache
+zig-pkg
 zig-out
