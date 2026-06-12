@@ -2,9 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-void zlibQ___ext_init__() {}
+void zlibQ_libQ___ext_init__() {}
 
-B_bytes zlibQ_compress(B_bytes data) {
+B_bytes zlibQ_libQ_compress(B_bytes data) {
     if (data->nbytes == 0) {
         return data;
     }
@@ -37,10 +37,10 @@ B_bytes zlibQ_compress(B_bytes data) {
     // Clean up
     deflateEnd(&stream);
 
-    return actBytesFromCStringNoCopy(output_buffer);
+    return actBytesFromCStringNoCopy((char *)output_buffer);
 }
 
-B_bytes zlibQ_decompress(B_bytes data) {
+B_bytes zlibQ_libQ_decompress(B_bytes data) {
     if (data->nbytes == 0) {
         return data;
     }
@@ -83,5 +83,5 @@ B_bytes zlibQ_decompress(B_bytes data) {
     // Clean up
     inflateEnd(&stream);
 
-    return actBytesFromCStringNoCopy(output_buffer);
+    return actBytesFromCStringNoCopy((char *)output_buffer);
 }

@@ -1,5 +1,5 @@
 import testing
-import zlib
+import lib as zlib
 
 def _test_roundtrip():
     for x in range(100):

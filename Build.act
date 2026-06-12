@@ -1,5 +1,5 @@
-name = "acton_zlib"
-fingerprint = 0x37d48d291fe6ec2a
+name = "zlib"
+fingerprint = 0x73887d3a7f9c10a6
 zig_dependencies = {
     "zlib": (
         path="deps/zlib",
