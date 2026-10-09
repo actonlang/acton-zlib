@@ -46,10 +46,6 @@ pub fn build(b: *std.Build) void {
             .include_path = "zconf.h",
         },
         .{
-            .HAVE_SYS_TYPES_H = true,
-            .HAVE_STDINT_H = true,
-            .HAVE_STDDEF_H = true,
-            .HAVE_UNISTD_H = true,
             .Z_HAVE_UNISTD_H = true,
         },
     );
