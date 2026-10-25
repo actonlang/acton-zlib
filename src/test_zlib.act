@@ -1,6 +1,10 @@
 import testing
 import lib as zlib
 
+# compress(b'hello') at the default level: a complete zlib stream that ends
+# with the final block and the Adler-32 checksum of the data
+_hello_stream = b'x\x9c\xcbH\xcd\xc9\xc9\x07\x00\x06,\x02\x15'
+
 def _test_roundtrip():
     for x in range(100):
         i = "hello".encode()
@@ -12,10 +16,26 @@ def _test_compress():
     for x in range(100):
         i = "hello".encode()
         c = zlib.compress(i)
-        testing.assertEqual(c, b'x\x9c\xcbH\xcd\xc9\xc9\x07')
+        testing.assertEqual(c, _hello_stream)
 
 def _test_decompress():
     for x in range(1000):
-        c = b'x\x9c\xcbH\xcd\xc9\xc9\x07'
-        d = zlib.decompress(c)
+        d = zlib.decompress(_hello_stream)
         testing.assertEqual(d, b'hello')
+
+def _test_roundtrip_large():
+    # 100,000 bytes that repeat every 251 bytes and include zero bytes. The
+    # stream is far shorter than half of the data.
+    i = bytes([(k * k) % 251 for k in range(100000)])
+    c = zlib.compress(i)
+    testing.assertEqual(len(zlib.decompress(c)), len(i))
+    testing.assertEqual(zlib.decompress(c), i, print_vals=False)
+
+def _test_decompress_truncated():
+    # The first 8 bytes of the stream for b'hello', without the end of the
+    # final block and the checksum
+    try:
+        d = zlib.decompress(b'x\x9c\xcbH\xcd\xc9\xc9\x07')
+        testing.error("expected ValueError, got " + repr(d))
+    except ValueError:
+        pass
