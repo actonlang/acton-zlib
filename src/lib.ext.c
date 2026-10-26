@@ -30,14 +30,14 @@ B_bytes zlibQ_libQ_compress(B_bytes data) {
 
     // Perform the deflate operation
     ret = deflate(&stream, Z_FINISH);
+    size_t output_len = stream.total_out;
+    deflateEnd(&stream);
     if (ret != Z_STREAM_END) {
         $RAISE((B_BaseException)$NEW(B_ValueError, $FORMAT("Unable to compress data, error: %d", ret)));
     }
 
-    // Clean up
-    deflateEnd(&stream);
-
-    return actBytesFromCStringNoCopy((char *)output_buffer);
+    // The deflate stream is binary and contains NUL bytes
+    return actBytesFromCStringLengthNoCopy((char *)output_buffer, output_len);
 }
 
 B_bytes zlibQ_libQ_decompress(B_bytes data) {
@@ -62,26 +62,26 @@ B_bytes zlibQ_libQ_decompress(B_bytes data) {
     // Allocate the output buffer using Acton's malloc
     size_t output_size = 2 * data->nbytes; // Initial output buffer size
     Bytef* output_buffer = (Bytef*)acton_malloc_atomic(output_size);
-    memset(output_buffer, 0, output_size);
     stream.avail_out = output_size;
     stream.next_out = output_buffer;
 
-    // Perform the inflate operation, increasing the output buffer size if needed
+    // Inflate until the end of the stream, doubling the output buffer each
+    // time it fills up. Z_BUF_ERROR with room left in the output buffer means
+    // the input ended before the stream did.
     do {
-        ret = inflate(&stream, Z_NO_FLUSH);
-        if (ret == Z_BUF_ERROR) {
-            // Increase the output buffer size and continue decompressing
-            size_t new_output_size = output_size * 2;
-            output_buffer = (Bytef*)acton_realloc(output_buffer, new_output_size);
-            stream.avail_out = new_output_size - stream.total_out;
+        if (stream.avail_out == 0) {
+            output_size *= 2;
+            output_buffer = (Bytef*)acton_realloc(output_buffer, output_size);
             stream.next_out = output_buffer + stream.total_out;
-        } else if (ret != Z_OK) {
-            $RAISE((B_BaseException)$NEW(B_ValueError, $FORMAT("Unable to decompress data, error: %d", ret)));
+            stream.avail_out = output_size - stream.total_out;
         }
-    } while (ret == Z_BUF_ERROR);
-
-    // Clean up
+        ret = inflate(&stream, Z_NO_FLUSH);
+    } while (ret == Z_OK);
+    size_t output_len = stream.total_out;
     inflateEnd(&stream);
+    if (ret != Z_STREAM_END) {
+        $RAISE((B_BaseException)$NEW(B_ValueError, $FORMAT("Unable to decompress data, error: %d", ret)));
+    }
 
-    return actBytesFromCStringNoCopy((char *)output_buffer);
+    return actBytesFromCStringLengthNoCopy((char *)output_buffer, output_len);
 }
