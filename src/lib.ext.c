@@ -1,87 +1,76 @@
+#include <limits.h>
+#include <stdbool.h>
 #include <zlib.h>
-#include <stdlib.h>
-#include <string.h>
+
+static struct B_ValueError zlibQ_libQ_output_too_long_error =
+    STATIC_EXCEPTION(B_ValueError, "Zlib output is too long");
+static struct B_MemoryError zlibQ_libQ_allocation_failed_error =
+    STATIC_EXCEPTION(B_MemoryError, "Unable to allocate zlib output");
 
 void zlibQ_libQ___ext_init__() {}
 
-B_bytes zlibQ_libQ_compress(B_bytes data) {
-    if (data->nbytes == 0) {
+static B_bytes zlib_transform(B_bytes data, bool compressing) {
+    if (data->nbytes == 0)
         return data;
+
+    const char *operation = compressing ? "compress" : "decompress";
+    z_stream stream = {0};
+    int ret = compressing ? deflateInit(&stream, Z_DEFAULT_COMPRESSION) : inflateInit(&stream);
+    if (ret != Z_OK)
+        RAISE(B_ValueError, $FORMAT("Unable to %s data, init error: %d", operation, ret));
+
+    stream.next_in = data->str;
+    int64_t input_left = data->nbytes;
+    int64_t capacity = (input_left < 65536 ? input_left : 65536) + 16;
+    Bytef *output = acton_malloc_atomic(capacity);
+    int64_t written = 0;
+    const int64_t output_limit = MAX_STR_LEN < SIZE_MAX ? MAX_STR_LEN : SIZE_MAX - 1;
+
+    // avail_in and avail_out are uInt even on 64-bit systems. On Windows,
+    // total_out is also 32-bit, so count the bytes written on each call.
+    while (output != NULL) {
+        if (stream.avail_in == 0) {
+            stream.avail_in = input_left > UINT_MAX ? UINT_MAX : (uInt)input_left;
+            input_left -= stream.avail_in;
+        }
+        int64_t space = capacity - written;
+        uInt chunk = space > UINT_MAX ? UINT_MAX : (uInt)space;
+        stream.next_out = output + written;
+        stream.avail_out = chunk;
+
+        if (compressing)
+            ret = deflate(&stream, input_left == 0 ? Z_FINISH : Z_NO_FLUSH);
+        else
+            ret = inflate(&stream, Z_NO_FLUSH);
+        written += chunk - stream.avail_out;
+        if (ret != Z_OK || written > output_limit)
+            break;
+        if (written == capacity) {
+            // Allow one extra byte so zlib can finish a stream whose output
+            // fits the limit exactly, or show that its output is too long.
+            capacity = capacity > output_limit / 2 ? output_limit + 1 : capacity * 2;
+            output = acton_realloc(output, capacity);
+        }
     }
 
-    // Prepare the zlib stream
-    int ret;
-    z_stream stream;
-    memset(&stream, 0, sizeof(stream));
-    ret = deflateInit(&stream, Z_DEFAULT_COMPRESSION);
-    if (ret != Z_OK) {
-        $RAISE((B_BaseException)$NEW(B_ValueError, $FORMAT("Unable to compress data, init error: %d", ret)));
-    }
+    if (compressing)
+        deflateEnd(&stream);
+    else
+        inflateEnd(&stream);
 
-    // Set the input data
-    stream.avail_in = data->nbytes;
-    stream.next_in = (Bytef*)data->str;
+    if (output == NULL)
+        RAISE_EXC(&zlibQ_libQ_allocation_failed_error);
+    if (written > output_limit)
+        RAISE_EXC(&zlibQ_libQ_output_too_long_error);
+    if (ret != Z_STREAM_END)
+        RAISE(B_ValueError, $FORMAT("Unable to %s data, error: %d", operation, ret));
+    return actBytesFromCStringLength((char *)output, written);
+}
 
-    // Allocate the output buffer using Acton's malloc
-    size_t output_size = deflateBound(&stream, data->nbytes);
-    Bytef* output_buffer = (Bytef*)acton_malloc_atomic(output_size);
-    stream.avail_out = output_size;
-    stream.next_out = output_buffer;
-
-    // Perform the deflate operation
-    ret = deflate(&stream, Z_FINISH);
-    size_t output_len = stream.total_out;
-    deflateEnd(&stream);
-    if (ret != Z_STREAM_END) {
-        $RAISE((B_BaseException)$NEW(B_ValueError, $FORMAT("Unable to compress data, error: %d", ret)));
-    }
-
-    // The deflate stream is binary and contains NUL bytes
-    return actBytesFromCStringLengthNoCopy((char *)output_buffer, output_len);
+B_bytes zlibQ_libQ_compress(B_bytes data) {
+    return zlib_transform(data, true);
 }
 
 B_bytes zlibQ_libQ_decompress(B_bytes data) {
-    if (data->nbytes == 0) {
-        return data;
-    }
-
-    // Prepare the zlib stream
-    int ret;
-    z_stream stream;
-    memset(&stream, 0, sizeof(stream));
-
-    ret = inflateInit(&stream);
-    if (ret != Z_OK) {
-        $RAISE((B_BaseException)$NEW(B_ValueError, $FORMAT("Unable to decompress data, init error: %d", ret)));
-    }
-
-    // Set the input data
-    stream.avail_in = data->nbytes;
-    stream.next_in = (Bytef*)data->str;
-
-    // Allocate the output buffer using Acton's malloc
-    size_t output_size = 2 * data->nbytes; // Initial output buffer size
-    Bytef* output_buffer = (Bytef*)acton_malloc_atomic(output_size);
-    stream.avail_out = output_size;
-    stream.next_out = output_buffer;
-
-    // Inflate until the end of the stream, doubling the output buffer each
-    // time it fills up. Z_BUF_ERROR with room left in the output buffer means
-    // the input ended before the stream did.
-    do {
-        if (stream.avail_out == 0) {
-            output_size *= 2;
-            output_buffer = (Bytef*)acton_realloc(output_buffer, output_size);
-            stream.next_out = output_buffer + stream.total_out;
-            stream.avail_out = output_size - stream.total_out;
-        }
-        ret = inflate(&stream, Z_NO_FLUSH);
-    } while (ret == Z_OK);
-    size_t output_len = stream.total_out;
-    inflateEnd(&stream);
-    if (ret != Z_STREAM_END) {
-        $RAISE((B_BaseException)$NEW(B_ValueError, $FORMAT("Unable to decompress data, error: %d", ret)));
-    }
-
-    return actBytesFromCStringLengthNoCopy((char *)output_buffer, output_len);
+    return zlib_transform(data, false);
 }
